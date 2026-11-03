@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Asoul Reminder</string>
+    <string name="monitor_channel_name">直播监控</string>
+    <string name="live_channel_name">开播提醒</string>
+    <string name="dynamic_channel_name">动态提醒</string>
+    <string name="schedule_channel_name">日程提醒</string>
+</resources>

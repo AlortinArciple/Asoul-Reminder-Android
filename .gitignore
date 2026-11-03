@@ -1,0 +1,13 @@
+.gradle/
+.kotlin/
+build/
+local.properties
+.idea/
+*.iml
+captures/
+.DS_Store
+
+# 私有配置与产物
+app/src/private/assets/default_config.json
+*.apk
+*.aab

@@ -4,6 +4,16 @@
 
 > 本仓库只包含 Android 端；Windows 桌面端在另一个仓库（`Asoul-Reminder-Desktop-Windows`）。两端共享业务规则，但不共享代码。
 
+## 下载
+
+已编译的公开版 APK（不含任何 `config.json` 或 Cookie）在 [Releases](https://github.com/AlortinArciple/Asoul-Reminder-Android/releases) 页面：
+
+```text
+AsoulReminder-Android-debug.apk
+```
+
+调试签名，安装时需要在系统里允许「安装未知来源应用」。
+
 ## 当前功能
 
 - 动态、日程、直播间、设置四个手机页面。

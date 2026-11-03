@@ -1,67 +1,131 @@
-# Asoul Reminder Android
+# Asoul Reminder（Android）
 
-这是 Asoul Reminder 的原生 Android 工程。
+ASOUL 日程、B 站动态与直播间状态提醒的 Android 客户端：Kotlin + Jetpack Compose + WorkManager，带通知栏常驻的「后台监控」前台服务。
 
-> 本仓库只包含 Android 端；Windows 桌面端在另一个仓库（`Asoul-Reminder-Desktop-Windows`）。两端共享业务规则，但不共享代码。
+- 平台：Android 8.0（API 26）及以上
+- 技术栈：Kotlin、Jetpack Compose、WorkManager、AlarmManager 精确闹钟、Coroutines
+- 相关仓库：[Asoul Reminder Windows 桌面端](https://github.com/AlortinArciple/Asoul-Reminder-Desktop-Windows)（业务规则相同，代码独立）
 
 ## 下载
 
-已编译的公开版 APK（不含任何 `config.json` 或 Cookie）在 [Releases](https://github.com/AlortinArciple/Asoul-Reminder-Android/releases) 页面：
+公开版 APK（不含任何 `config.json` 或 Cookie）在 [Releases](https://github.com/AlortinArciple/Asoul-Reminder-Android/releases) 页面：
 
 ```text
 AsoulReminder-Android-debug.apk
 ```
 
-调试签名，安装时需要在系统里允许「安装未知来源应用」。
+使用 debug 签名，安装时需要在系统里允许「安装未知来源应用」；每个 Release 的说明里都附了对应版本的 SHA256。
 
-## 当前功能
+## 安装
 
-- 动态、日程、直播间、设置四个手机页面。
+1. 下载 APK 并安装。
+2. 打开应用，允许通知（Android 13+ 必需）。
+3. 允许「闹钟和提醒」，否则开播窗口只能用非精确调度。
+4. 建议在系统电池设置里把本应用设为「不受限制」，避免厂商省电策略杀掉后台。
+
+## 第一次使用
+
+两种方式任选其一：
+
+**应用内登录（推荐）**
+
+设置 → 配置与数据 → 「B 站账号 / 扫码登录」，在内置 WebView 里用哔哩哔哩 App 扫码或账号密码登录（可能触发滑块或短信验证，按页面提示完成）。程序只从请求头里取 `SESSDATA`、`bili_jct`、`DedeUserID` 等凭证，弹窗确认后才用 Android Keystore 加密写入本机。
+
+**导入桌面配置**
+
+设置 → 配置与数据 → 导入配置，选择桌面版导出的 `config.json`。导入后的 Cookie 同样加密保存。
+
+登录后回到各页面手动刷新一次——首次动态只建立基线，不会提醒历史内容。
+
+## 功能
+
+- 动态、日程、直播间、设置四个页面。
 - 直接读取 ASOUL 日程；`calendar/latest` 返回 403 时改读首页。
-- 读取启用成员最近的 B 站动态与直播间状态。
-- B 站客户端优先跳转，未安装时使用浏览器。
-- 日程可添加到系统日历、系统闹钟或应用内精确提醒；系统闹钟默认开播前 10 分钟，系统日历默认开播前 1 小时开始（闹钟公开 API 不支持指定日期，需在时钟 App 确认）。
-- 新动态与开播提醒进入系统通知中心；首次抓取成员动态只建立基线，之后的新动态才提醒（Android 13+ 需要通知权限，启动时会申请，设置页可查看与重新授权）。
-- 通知按「悬浮 / 普通」分类：开播提醒与动态提醒默认悬浮横幅，日程提醒默认不悬浮，设置页「悬浮通知」小节可分别开关（渠道 importance 创建后不可改，故每类准备两套渠道）。
-- 直播期间只提醒一次开播：以 `live_time` 为场次标识去重，状态抖动与并发刷新不会重复通知。
-- 通知点击直达：已安装 B 站客户端时用 App 打开（动态/直播间链接），未安装时回退浏览器。
-- 设置页「哔哩哔哩打开方式」可指定默认用哪个应用打开动态/直播间（双开时选常用的实例，不再每次弹选择器）；未指定时自动优先 B 站客户端（国内版/国际版），通知点击与 App 内按钮行为一致。
-- 下播后的「正在查找直播后的新动态」常驻通知，在找到动态或查找超时后自动恢复为「后台监控运行中」。
-- 日程每 30 分钟、动态与直播状态最低每 15 分钟后台刷新。
-- 通知栏常驻「后台监控」前台服务(设置中可关)：即使应用不在前台也自动刷新日程/动态/直播，并滚动检测开播窗口；系统杀进程后由开机广播与开播闹钟尽力重建，建议在系统设置中允许本应用自启动/后台运行(不要使用「强行停止」)。
-- 日程前 10 分钟启动可见的前台直播监控，每 30 秒检查到开始后 2 分钟。
-- 检测开播后每 20 分钟检查下播；下播后每 3 分钟读取动态，最多一小时。
-- B 站 `live_status=2`（轮播）按未开播处理。
-- 可导入桌面版 `config.json`；Cookie 使用 Android Keystore 加密，不会写入 APK。
-- 也支持应用内登录：设置 → 配置与数据 → 「B 站账号 / 扫码登录」打开内置 WebView 登录，从请求头取出 `SESSDATA` 等凭证，弹窗确认后才加密保存。每 30 分钟用 `nav` 校验一次，只有 `code=-101` 判定失效；失效后应用会自动打开登录页（每次启动只自动弹一次）。
+- 读取启用成员的最新 B 站动态与直播间状态，动态里的 B 站表情支持 GIF 动图。
+- 新动态与开播提醒进入通知中心；首次抓取成员动态只建立基线，之后的新动态才提醒。
+- 日程可添加到系统日历、系统闹钟或应用内精确提醒；系统闹钟默认开播前 10 分钟，系统日历默认开播前 1 小时（闹钟公开 API 不支持指定日期，日期需在时钟 App 里确认）。
+- 日程新增/变动只提醒还没结束的日程（开始后 30 分钟宽限），并用持久化记录去重——站点每周重建日历页、把几周前的日程重新放回列表时，不会再把历史日程当成新增弹一遍。
+- 开播窗口（开始前 10 分钟到开始后 2 分钟）每 30 秒检查一次；检测到开播后每 20 分钟查下播；下播后每 3 分钟刷动态，最长 1 小时。
+- 直播期间只提醒一次开播：以 B 站 `live_time` 作为场次标识去重，状态抖动与并发刷新都不会重复通知。
+- `live_status=2`（轮播）按未开播处理。
+- 通知点击优先用哔哩哔哩客户端打开（未安装时回退浏览器）；设置页可显式指定「哔哩哔哩打开方式」，解决双开每次弹选择器的问题。
+- 通知栏常驻「后台监控」前台服务（设置中可关）：应用不在前台时也会刷新日程/动态/直播状态，并滚动检测开播窗口；系统杀进程后由开机广播与开播闹钟尽力重建。
+- 每 30 分钟用 `x/web-interface/nav` 校验 Cookie，只有 `code=-101` 判定失效；失效后应用自动打开登录页（每次启动只自动弹一次）。
+
+## 通知
+
+通知按「悬浮 / 普通」两类渠道分发：
+
+- 开播提醒与动态提醒默认悬浮横幅，日程提醒默认不悬浮。
+- 设置页「悬浮通知」小节可分别开关。渠道 `importance` 创建后不可修改，因此每类准备了 `high`/`default` 两套渠道，切换时重建通知。
+
+## 后台与调度
+
+- 日程每 30 分钟、动态与直播状态最低每 15 分钟在后台刷新。
+- 日程开始前 10 分钟启动可见的前台直播监控服务，每 30 秒检查一次，持续到开始后 2 分钟。
+- 下播后的「正在查找直播后的新动态」常驻通知，会在找到动态或超时后自动恢复成「后台监控运行中」。
+- 建议在系统设置中允许本应用自启动/后台运行，不要使用「强行停止」——强行停止会取消所有闹钟与后台任务，直到手动再次打开应用。
 
 ## 构建
 
-需要 JDK 17、Android SDK 36 和 Android Build Tools 36。建议从仓库根目录使用构建脚本，它会运行对应变体的单元测试、Lint 和 APK 构建：
+需要 JDK 17、Android SDK 36、Android Build Tools 36。仓库根目录直接构建：
 
 ```powershell
-# 不包含 config.json
-.\scripts\build-android.ps1
-
-# 自动复制根目录 config.json，只能私人使用
-.\scripts\build-android-private.ps1
+.\gradlew.bat --no-daemon assemblePublicDebug      # 生成公开版 APK
+.\gradlew.bat --no-daemon testPublicDebugUnitTest  # 单元测试
+.\gradlew.bat --no-daemon lintPublicDebug          # Lint
 ```
 
-输出文件：
+输出：
 
 ```text
-dist/android/AsoulReminder-Android-debug.apk
-dist/android/AsoulReminder-Android-private-debug.apk
+app/build/outputs/apk/public/debug/app-public-debug.apk
 ```
 
-私人版内置的 `config.json` 位于 APK 资源中，Cookie 可以被解包读取。不要上传、转发或公开发布私人版 APK。
+首次构建需要联网下载 Gradle 与依赖。Linux/macOS 上如果 `gradlew` 丢了执行位，先 `chmod +x gradlew`（`.gitattributes` 已固定 `gradlew` 使用 LF）。
 
-## 首次使用
+`app/build.gradle.kts` 里还有一个 `private` 变体（`versionNameSuffix = "-private"`），用于把 `app/src/private/assets/default_config.json` 打进 APK 自动导入配置。本仓库不包含该目录与私有配置；即使构建该变体也不会自带任何 Cookie。私人包内的 `default_config.json` 可被解包读取，**不要公开分享私有 APK**。
 
-1. 安装 APK 后允许通知。
-2. 允许“闹钟和提醒”，否则开播窗口监控只能使用系统的非精确调度。
-3. 普通版需要在设置中导入桌面 `config.json`；私人版会自动导入内置配置。
-4. 回到各页面手动刷新一次，首次动态只建立基线，不提醒历史内容。
-5. 为了减少厂商省电策略造成的延迟，建议在系统电池设置中把本应用设为“不受限制”。
+## 项目结构
 
-系统时钟 Intent 通常只预填时、分，具体日期必须在时钟应用中确认；需要完整日期时，请使用“应用内提醒”或“添加到系统日历”。Android 的后台调度仍可能受到省电模式和厂商系统限制，开播窗口会使用可见的前台通知来尽量保证 30 秒检查。
+```text
+app/src/main/java/com/alortinarciple/asoulreminder/
+  MainActivity.kt              Activity 入口与导航
+  BilibiliLoginActivity.kt     内置 WebView 登录
+  AsoulApplication.kt          应用容器、通知渠道、后台任务初始化
+  ui/                          Compose 页面与交互
+  ui/MainViewModel.kt          UI 状态
+  data/ReminderRepository.kt   业务数据流
+  data/Models.kt               模型、缓存结构
+  data/AppPreferences.kt       SharedPreferences 配置
+  data/SecretStore.kt          Android Keystore 加密存 Cookie
+  data/BilibiliLogin.kt        Cookie 归一化、合并、nav 状态解析
+  data/AsoulParser.kt          ASOUL 日程解析
+  data/BilibiliParser.kt       B 站动态与直播解析
+  data/WbiSign.kt              wbi 签名
+  data/NetworkClient.kt        HttpURLConnection 封装
+  data/ScheduleNotificationRules.kt  日程提醒窗口与去重
+  data/LiveNotificationRules.kt      开播通知去重
+  background/MonitorSchedule.kt      开播窗口与调度时间计算
+  background/                  WorkManager、广播接收器、精确闹钟、前台服务
+  notifications/               通知渠道、跳转目标、通知构建
+app/src/test/                  JUnit 单元测试
+```
+
+## 测试
+
+```powershell
+.\gradlew.bat --no-daemon testPublicDebugUnitTest
+```
+
+单元测试不访问网络、不读取真实 Cookie，覆盖日程/动态解析、wbi 签名、Cookie 合并与失效判定、开播去重、日程提醒窗口、通知渠道与跳转目标等规则。
+
+## 隐私
+
+- Cookie 只保存在 Android Keystore（AES/GCM）中，不写入 APK、不写日志。
+- 公开版 APK 内不含任何配置文件；导入或登录的凭证只留在本机。
+- 应用只访问 ASOUL 日程页与 B 站公开接口。
+
+## 免责声明
+
+本项目是非官方的个人工具，与 ASOUL、哔哩哔哩无关联。数据来自 ASOUL 公开日程页与 B 站公开接口，请自行控制请求频率，遵守相关服务条款。程序按「现状」提供，使用风险自负。

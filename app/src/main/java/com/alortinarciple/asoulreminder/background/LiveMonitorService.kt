@@ -82,7 +82,14 @@ class LiveMonitorService : Service() {
             return
         }
         val now = System.currentTimeMillis()
-        if (MonitorSchedule.scheduleDue(state.cache.lastScheduleRefreshEpochMillis, settings.scheduleIntervalMinutes, now)) {
+        if (
+            MonitorSchedule.scheduleDue(
+                state.cache.lastScheduleRefreshEpochMillis,
+                settings.scheduleIntervalMinutes,
+                now,
+                state.cache.scheduleFailStreak,
+            )
+        ) {
             runCatching { repository.refreshSchedule() }
         }
         if (MonitorSchedule.contentDue(state.cache.lastDynamicRefreshEpochMillis, settings.dynamicIntervalMinutes, now)) {

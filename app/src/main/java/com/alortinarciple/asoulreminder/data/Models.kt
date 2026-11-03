@@ -122,6 +122,8 @@ data class AppCache(
     val lastScheduleRefreshEpochMillis: Long? = null,
     val lastDynamicRefreshEpochMillis: Long? = null,
     val lastLiveRefreshEpochMillis: Long? = null,
+    /** 日程连续失败次数：用于失败退避，成功后清零。 */
+    val scheduleFailStreak: Int = 0,
     val lastError: String? = null,
 )
 

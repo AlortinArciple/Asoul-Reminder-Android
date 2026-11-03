@@ -9,10 +9,14 @@ class ScheduleSyncWorker(
     appContext: Context,
     params: WorkerParameters,
 ) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result = runCatching {
+    /**
+     * `refreshSchedule()` 内部已经收掉异常并记录失败退避，这里不再返回 Result.retry()：
+     * WorkManager 的重试是指数退避且不受我们的 30 分钟下限约束，失败时会反复打站点。
+     */
+    override suspend fun doWork(): Result {
         applicationContext.container().repository.refreshSchedule()
-        Result.success()
-    }.getOrElse { Result.retry() }
+        return Result.success()
+    }
 }
 
 class ContentSyncWorker(

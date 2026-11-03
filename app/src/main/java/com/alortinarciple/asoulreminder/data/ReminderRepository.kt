@@ -2,6 +2,7 @@ package com.alortinarciple.asoulreminder.data
 
 import android.content.Context
 import com.alortinarciple.asoulreminder.background.BackgroundScheduler
+import com.alortinarciple.asoulreminder.background.MonitorSchedule
 import com.alortinarciple.asoulreminder.notifications.NotificationHelper
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -148,7 +149,10 @@ class ReminderRepository(
         updateState(refreshing = true, message = "正在刷新日程")
         runCatching { refreshScheduleInternal() }
             .onSuccess { updateState(refreshing = false, message = "日程已刷新") }
-            .onFailure { updateState(refreshing = false, message = readableError("日程", it)) }
+            .onFailure { error ->
+                recordScheduleFailure()
+                updateState(refreshing = false, message = readableError("日程", error))
+            }
     }
 
     suspend fun refreshDynamics() = refreshMutex.withLock {
@@ -222,9 +226,26 @@ class ReminderRepository(
     }
 
     private fun scheduleRefreshDue(): Boolean {
-        val last = _state.value.cache.lastScheduleRefreshEpochMillis ?: return true
-        val interval = _state.value.settings.scheduleIntervalMinutes.coerceAtLeast(30) * 60_000L
-        return System.currentTimeMillis() - last >= interval
+        val cache = _state.value.cache
+        return MonitorSchedule.scheduleDue(
+            cache.lastScheduleRefreshEpochMillis,
+            _state.value.settings.scheduleIntervalMinutes,
+            System.currentTimeMillis(),
+            cache.scheduleFailStreak,
+        )
+    }
+
+    /** 记录一次日程抓取失败，供后台按失败次数退避（与 Windows 端一致）。 */
+    private fun recordScheduleFailure() {
+        val cache = _state.value.cache
+        val now = System.currentTimeMillis()
+        saveCache(
+            cache.copy(
+                scheduleFailStreak = cache.scheduleFailStreak + 1,
+                // 失败也要落时间戳：否则每分钟一次的 tick 都会认为「从未刷新」而立刻重试。
+                lastScheduleRefreshEpochMillis = now,
+            ),
+        )
     }
 
     private suspend fun refreshScheduleInternal() {
@@ -261,6 +282,7 @@ class ReminderRepository(
             events = events,
             notifiedScheduleKeys = ScheduleNotificationRules.prune(notified, now),
             lastScheduleRefreshEpochMillis = now,
+            scheduleFailStreak = 0,
         )
         saveCache(cache)
         BackgroundScheduler.scheduleLiveWindows(context, events, settings)

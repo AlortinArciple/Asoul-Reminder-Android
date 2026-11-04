@@ -1,3 +1,5 @@
+> Bilibili屿汐烛华 vibecoding产物，日程检测基于asoul.love网站礼貌化爬取，私人使用，莫要给网站加压力，公开仓库用于自动更新。
+
 # Asoul Reminder（Android）
 
 ASOUL 日程、B 站动态与直播间状态提醒的 Android 客户端：Kotlin + Jetpack Compose + WorkManager，带通知栏常驻的「后台监控」前台服务。

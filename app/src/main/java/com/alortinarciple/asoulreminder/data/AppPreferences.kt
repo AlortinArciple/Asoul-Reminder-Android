@@ -25,6 +25,14 @@ class AppPreferences(context: Context) {
 
     fun loadSettings(): AppSettings = preferences.getString(SETTINGS_KEY, null)
         ?.let { runCatching { json.decodeFromString<AppSettings>(it) }.getOrNull() }
+        ?.let { settings ->
+            val members = fillDefaultIdentities(settings.members)
+            if (members === settings.members) {
+                settings
+            } else {
+                settings.copy(members = members).also { saveSettings(it) }
+            }
+        }
         ?: AppSettings()
 
     fun saveSettings(settings: AppSettings) {
@@ -139,8 +147,8 @@ class AppPreferences(context: Context) {
                 monitorDynamic = item.boolean("monitor_dynamic") ?: base.monitorDynamic,
                 monitorLive = item.boolean("monitor_live") ?: base.monitorLive,
                 color = item.string("color") ?: base.color,
-                uid = item.string("uid") ?: base.uid,
-                dynamicUrl = item.string("dynamic_url") ?: base.dynamicUrl,
+                uid = item.string("uid")?.ifBlank { base.uid } ?: base.uid,
+                dynamicUrl = item.string("dynamic_url")?.ifBlank { base.dynamicUrl } ?: base.dynamicUrl,
                 liveUrl = item.string("live_url") ?: base.liveUrl,
             )
         }.ifEmpty { fallback }

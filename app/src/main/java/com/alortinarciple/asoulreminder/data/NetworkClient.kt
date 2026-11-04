@@ -5,10 +5,14 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonObject
+import java.io.File
 import java.io.IOException
 import java.net.HttpURLConnection
 import java.net.URL
 import java.util.zip.GZIPInputStream
+
+/** 下载安装包时的分块大小，兼顾进度回调频率与读效率。 */
+internal const val DOWNLOAD_CHUNK_SIZE = 256 * 1024
 
 data class NetworkResponse(
     val statusCode: Int,
@@ -37,6 +41,54 @@ class NetworkClient(
         url: String,
         headers: Map<String, String> = emptyMap(),
     ): JsonObject = json.parseToJsonElement(getText(url, headers)).jsonObject
+
+    /**
+     * 把远端文件下载到 [target]，边下边回调 [progress]。
+     * 先写 `.part` 临时文件，成功后改名，失败时删除，避免半截 APK 被当成安装包。
+     */
+    suspend fun downloadFile(
+        url: String,
+        target: File,
+        headers: Map<String, String> = emptyMap(),
+        progress: ((downloaded: Long, total: Long) -> Unit)? = null,
+    ): File = withContext(Dispatchers.IO) {
+        val partial = File(target.parentFile, target.name + ".part")
+        partial.parentFile?.mkdirs()
+        val connection = (URL(url).openConnection() as HttpURLConnection).apply {
+            requestMethod = "GET"
+            connectTimeout = timeoutMillis
+            readTimeout = 60_000
+            instanceFollowRedirects = true
+            setRequestProperty("User-Agent", "AsoulReminder-Android")
+            setRequestProperty("Accept-Encoding", "identity")
+            headers.forEach { (key, value) -> setRequestProperty(key, value) }
+        }
+        try {
+            val code = connection.responseCode
+            if (code !in 200..299) throw HttpStatusException(code, url)
+            val total = connection.contentLengthLong
+            var downloaded = 0L
+            partial.outputStream().use { output ->
+                connection.inputStream.use { input ->
+                    val buffer = ByteArray(DOWNLOAD_CHUNK_SIZE)
+                    while (true) {
+                        val read = input.read(buffer)
+                        if (read < 0) break
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        progress?.invoke(downloaded, total)
+                    }
+                }
+            }
+            partial.renameTo(target)
+            target
+        } catch (error: Exception) {
+            partial.delete()
+            throw error
+        } finally {
+            connection.disconnect()
+        }
+    }
 
     suspend fun request(
         url: String,

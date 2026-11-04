@@ -54,6 +54,12 @@ class AppPreferences(context: Context) {
     /** 上一次 nav 校验结论：valid / expired / unknown。 */
     fun cookieStatus(): String = preferences.getString(COOKIE_STATUS_KEY, "").orEmpty()
 
+    fun updateCheckedAtMillis(): Long = preferences.getLong(UPDATE_CHECKED_AT_KEY, 0L)
+
+    fun recordUpdateCheck(checkedAtMillis: Long) {
+        preferences.edit().putLong(UPDATE_CHECKED_AT_KEY, checkedAtMillis).apply()
+    }
+
     fun cookieCheckedAtMillis(): Long = preferences.getLong(COOKIE_CHECKED_AT_KEY, 0L)
 
     fun recordCookieCheck(status: String, checkedAtMillis: Long) {
@@ -153,5 +159,6 @@ class AppPreferences(context: Context) {
         const val COOKIE_EXPIRED_KEY = "bilibili_cookie_expired"
         const val COOKIE_STATUS_KEY = "bilibili_cookie_status"
         const val COOKIE_CHECKED_AT_KEY = "bilibili_cookie_checked_at"
+        const val UPDATE_CHECKED_AT_KEY = "update_checked_at"
     }
 }

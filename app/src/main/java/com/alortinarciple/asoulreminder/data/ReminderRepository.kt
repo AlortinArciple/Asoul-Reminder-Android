@@ -1,6 +1,7 @@
 package com.alortinarciple.asoulreminder.data
 
 import android.content.Context
+import com.alortinarciple.asoulreminder.BuildConfig
 import com.alortinarciple.asoulreminder.background.BackgroundScheduler
 import com.alortinarciple.asoulreminder.background.MonitorSchedule
 import com.alortinarciple.asoulreminder.notifications.NotificationHelper
@@ -12,6 +13,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -223,6 +225,49 @@ class ReminderRepository(
             .filter { it.triggerEpochMillis > System.currentTimeMillis() }
             .distinctBy(ScheduledReminder::key)
         saveCache(_state.value.cache.copy(scheduledReminders = merged))
+    }
+
+    /**
+     * 检查 GitHub 上是否有更新版本。
+     * [silent] 为自动检查：24 小时内已查过就直接跳过，返回 null 表示无需提示。
+     */
+    suspend fun checkUpdate(silent: Boolean = false): AppRelease? {
+        val now = System.currentTimeMillis()
+        if (silent && now - preferences.updateCheckedAtMillis() < AppUpdater.UPDATE_CHECK_INTERVAL_MILLIS) return null
+        val payload = try {
+            network.getJson(AppUpdater.LATEST_RELEASE_URL, mapOf("Accept" to "application/vnd.github+json"))
+        } catch (error: Throwable) {
+            throw UpdateException("无法连接 GitHub：${error.message ?: error.javaClass.simpleName}")
+        }
+        preferences.recordUpdateCheck(now)
+        val release = try {
+            AppUpdater.parseRelease(payload)
+        } catch (error: UpdateException) {
+            throw error
+        } catch (error: Throwable) {
+            throw UpdateException("无法解析更新信息：${error.message ?: error.javaClass.simpleName}")
+        }
+        return if (AppUpdater.isNewer(release.tag, BuildConfig.VERSION_NAME)) release else null
+    }
+
+    /** 下载安装包到 cacheDir/updates，返回本地文件；[progress] 回调 0..100 的整数进度。 */
+    suspend fun downloadUpdate(
+        release: AppRelease,
+        progress: ((Int) -> Unit)? = null,
+    ): File {
+        val target = File(context.cacheDir, "updates/${release.assetName}")
+        target.parentFile?.mkdirs()
+        return try {
+            network.downloadFile(
+                url = release.assetUrl,
+                target = target,
+                progress = { done, total ->
+                    if (total > 0) progress?.invoke(((done * 100) / total).toInt().coerceIn(0, 100))
+                },
+            )
+        } catch (error: Throwable) {
+            throw UpdateException("下载失败：${error.message ?: error.javaClass.simpleName}")
+        }
     }
 
     private fun scheduleRefreshDue(): Boolean {

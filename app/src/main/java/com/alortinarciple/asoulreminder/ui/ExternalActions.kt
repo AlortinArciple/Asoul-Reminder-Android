@@ -10,11 +10,13 @@ import android.provider.AlarmClock
 import android.provider.CalendarContract
 import android.provider.Settings
 import android.widget.Toast
+import androidx.core.content.FileProvider
 import com.alortinarciple.asoulreminder.background.BackgroundScheduler
 import com.alortinarciple.asoulreminder.background.container
 import com.alortinarciple.asoulreminder.data.AppSettings
 import com.alortinarciple.asoulreminder.data.LiveEvent
 import com.alortinarciple.asoulreminder.notifications.NotificationTargets
+import java.io.File
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -105,5 +107,47 @@ object ExternalActions {
             Uri.parse("package:${context.packageName}"),
         )
         runCatching { context.startActivity(intent) }
+    }
+
+    /** 是否已允许「安装未知应用」，未允许时无法直接拉起系统安装器。 */
+    fun canInstallPackages(context: Context): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+
+    fun requestInstallPermission(context: Context) {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
+        runCatching {
+            context.startActivity(
+                Intent(
+                    Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                    Uri.parse("package:${context.packageName}"),
+                ),
+            )
+        }
+    }
+
+    /** 用 FileProvider 把下载好的 APK 交给系统安装器。 */
+    fun installApk(context: Context, file: File) {
+        if (!file.exists()) {
+            Toast.makeText(context, "安装包不存在，请重新下载", Toast.LENGTH_SHORT).show()
+            return
+        }
+        if (!canInstallPackages(context)) {
+            Toast.makeText(context, "请先允许本应用安装未知应用", Toast.LENGTH_LONG).show()
+            requestInstallPermission(context)
+            return
+        }
+        val uri = runCatching {
+            FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+        }.getOrNull()
+        if (uri == null) {
+            Toast.makeText(context, "无法读取安装包", Toast.LENGTH_SHORT).show()
+            return
+        }
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, "application/vnd.android.package-archive")
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        runCatching { context.startActivity(intent) }
+            .onFailure { Toast.makeText(context, "没有可用的安装器", Toast.LENGTH_SHORT).show() }
     }
 }

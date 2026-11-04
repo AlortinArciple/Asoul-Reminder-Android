@@ -48,6 +48,7 @@ import androidx.compose.material.icons.rounded.OpenInNew
 import androidx.compose.material.icons.rounded.Refresh
 import androidx.compose.material.icons.rounded.Schedule
 import androidx.compose.material.icons.rounded.Settings
+import androidx.compose.material.icons.rounded.SystemUpdate
 import androidx.compose.material.icons.rounded.Timer
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
@@ -95,7 +96,9 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import com.alortinarciple.asoulreminder.R
+import com.alortinarciple.asoulreminder.BuildConfig
 import com.alortinarciple.asoulreminder.background.BackgroundScheduler
+import com.alortinarciple.asoulreminder.data.AppRelease
 import com.alortinarciple.asoulreminder.data.AppSettings
 import com.alortinarciple.asoulreminder.data.AppState
 import com.alortinarciple.asoulreminder.data.DynamicItem
@@ -148,9 +151,48 @@ fun AsoulApp(
     var currentTab by remember { mutableStateOf(AppTab.Schedule) }
     var selectedEvent by remember { mutableStateOf<LiveEvent?>(null) }
     var cookieLoginLaunched by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    val currentVersion = remember { BuildConfig.VERSION_NAME }
+    var updatableRelease by remember { mutableStateOf<AppRelease?>(null) }
+    var updateDownloading by remember { mutableStateOf(false) }
+    var updateProgress by remember { mutableIntStateOf(0) }
+    var updateMessage by remember { mutableStateOf("") }
+    var checkingUpdate by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
         viewModel.refreshOnLaunch()
+    }
+
+    // 启动后静默检查一次更新：24 小时内已查过就跳过，发现新版才弹窗。
+    LaunchedEffect(Unit) {
+        viewModel.checkUpdate(manual = false) { release, error ->
+            if (release != null) {
+                updateMessage = ""
+                updatableRelease = release
+            } else if (error != null) {
+                Toast.makeText(context, "检查更新失败：$error", Toast.LENGTH_SHORT).show()
+            }
+        }
+    }
+
+    val startUpdateCheck: (Boolean) -> Unit = { manual ->
+        if (checkingUpdate) {
+            // 已在上一次请求中，忽略重复点击。
+        } else {
+            checkingUpdate = true
+            viewModel.checkUpdate(manual = manual) { release, error ->
+                checkingUpdate = false
+                when {
+                    error != null -> Toast.makeText(context, "检查更新失败：$error", Toast.LENGTH_LONG).show()
+                    release == null && manual ->
+                        Toast.makeText(context, "当前已是最新版本 v$currentVersion", Toast.LENGTH_SHORT).show()
+                    release != null -> {
+                        updateMessage = ""
+                        updatableRelease = release
+                    }
+                }
+            }
+        }
     }
 
     // Cookie 失效时自动进入登录页；登录成功后状态变为未失效，允许下次再自动弹出。
@@ -233,6 +275,9 @@ fun AsoulApp(
                     isNotificationPermissionGranted = isNotificationPermissionGranted,
                     openAppNotificationSettings = openAppNotificationSettings,
                     openCookieLogin = openCookieLogin,
+                    currentVersion = currentVersion,
+                    checkingUpdate = checkingUpdate,
+                    onCheckUpdate = { startUpdateCheck(true) },
                 )
             }
         }
@@ -244,6 +289,39 @@ fun AsoulApp(
             settings = state.settings,
             onDismiss = { selectedEvent = null },
             onRememberReminders = viewModel::rememberScheduledReminders,
+        )
+    }
+
+    updatableRelease?.let { release ->
+        UpdateDialog(
+            release = release,
+            currentVersion = currentVersion,
+            downloading = updateDownloading,
+            progress = updateProgress,
+            message = updateMessage,
+            onDownload = {
+                if (updateDownloading) {
+                    // 下载中重复点击无意义，进度条自身已在反馈。
+                } else {
+                    updateDownloading = true
+                    updateProgress = 0
+                    updateMessage = ""
+                    viewModel.downloadUpdate(
+                        release = release,
+                        onProgress = { updateProgress = it },
+                        onFinished = { file, error ->
+                            updateDownloading = false
+                            if (file != null) {
+                                updatableRelease = null
+                                ExternalActions.installApk(context, file)
+                            } else {
+                                updateMessage = error ?: "下载失败"
+                            }
+                        },
+                    )
+                }
+            },
+            onDismiss = { updatableRelease = null },
         )
     }
 }
@@ -600,6 +678,9 @@ private fun SettingsScreen(
     isNotificationPermissionGranted: () -> Boolean,
     openAppNotificationSettings: () -> Unit,
     openCookieLogin: () -> Unit,
+    currentVersion: String,
+    checkingUpdate: Boolean,
+    onCheckUpdate: () -> Unit,
 ) {
     val context = LocalContext.current
     var showBilibiliTargetSheet by remember { mutableStateOf(false) }
@@ -742,6 +823,13 @@ private fun SettingsScreen(
                     if (state.hasCookie) "B 站 Cookie 已加密保存" else "当前没有 B 站 Cookie",
                     "选择文件",
                 ) { importLauncher.launch(arrayOf("application/json", "text/plain")) }
+                HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
+                ActionSettingRow(
+                    Icons.Rounded.SystemUpdate,
+                    "检查更新",
+                    if (checkingUpdate) "正在检查..." else "当前 v$currentVersion",
+                    "检查",
+                ) { onCheckUpdate() }
                 HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.6f))
                 Column(Modifier.padding(vertical = 12.dp)) {
                     Text("添加到日历的默认时长", style = MaterialTheme.typography.titleMedium)

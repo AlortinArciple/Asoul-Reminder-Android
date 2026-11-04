@@ -168,8 +168,8 @@ fun defaultMembers(): List<MemberConfig> = listOf(
         monitorDynamic = false,
         monitorLive = true,
         color = "#C93773",
-        uid = "",
-        dynamicUrl = "",
+        uid = "3537115310721181",
+        dynamicUrl = "https://space.bilibili.com/3537115310721181/dynamic",
         liveUrl = "https://live.bilibili.com/30849777",
     ),
     MemberConfig(
@@ -179,8 +179,8 @@ fun defaultMembers(): List<MemberConfig> = listOf(
         monitorDynamic = false,
         monitorLive = true,
         color = "#7252C0",
-        uid = "",
-        dynamicUrl = "",
+        uid = "3537115310721781",
+        dynamicUrl = "https://space.bilibili.com/3537115310721781/dynamic",
         liveUrl = "https://live.bilibili.com/30858592",
     ),
 )

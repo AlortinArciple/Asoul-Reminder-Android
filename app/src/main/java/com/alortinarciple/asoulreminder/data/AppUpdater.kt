@@ -72,7 +72,13 @@ object AppUpdater {
 
     fun parseRelease(payload: JsonObject, assetName: String = APK_ASSET_NAME): AppRelease {
         val tag = payload["tag_name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
-        if (tag.isEmpty()) throw UpdateException("GitHub 返回的版本信息缺少版本号")
+        if (tag.isEmpty()) {
+            // GitHub 出错时返回 {"message": "..."}，例如公开接口按 IP 限流。
+            val hint = payload["message"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()
+            throw UpdateException(
+                if (hint.isNotEmpty()) "GitHub 返回错误：$hint" else "GitHub 返回的版本信息缺少版本号",
+            )
+        }
         val assets = runCatching { payload["assets"]?.jsonArray }.getOrNull().orEmpty()
         val asset = assets
             .mapNotNull { runCatching { it.jsonObject }.getOrNull() }

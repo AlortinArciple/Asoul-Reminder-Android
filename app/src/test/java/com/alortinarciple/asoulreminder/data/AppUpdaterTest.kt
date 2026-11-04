@@ -101,8 +101,17 @@ class AppUpdaterTest {
     }
 
     @Test
-    fun parseReleaseRejectsMissingApk() {
+    fun parseReleaseSurfacesGithubErrorMessage() {
+        // GitHub 按 IP 限流时返回 {"message": "..."}，错误提示要带出来。
         val error = runCatching {
+            AppUpdater.parseRelease(payload("""{"message": "API rate limit exceeded for 1.2.3.4."}"""))
+        }.exceptionOrNull()
+        assertTrue(error is UpdateException)
+        assertTrue(error?.message?.contains("API rate limit exceeded") == true)
+    }
+
+    @Test
+    fun parseReleaseRejectsMissingApk() {        val error = runCatching {
             AppUpdater.parseRelease(
                 payload(
                     """

@@ -39,6 +39,13 @@ object AppUpdater {
     const val ANDROID_REPO = "AlortinArciple/Asoul-Reminder-Android"
     const val LATEST_RELEASE_URL = "https://api.github.com/repos/$ANDROID_REPO/releases/latest"
     const val RELEASES_PAGE_URL = "https://github.com/$ANDROID_REPO/releases"
+
+    /**
+     * 优先读 releases.atom：GitHub 的 api.github.com 按出口 IP 限流 60 次/小时，
+     * 共享代理下经常被他人耗尽，而 atom 源与下载链接都不消耗额度。
+     */
+    const val RELEASES_FEED_URL = "https://github.com/$ANDROID_REPO/releases.atom"
+    const val DOWNLOAD_URL_TEMPLATE = "https://github.com/$ANDROID_REPO/releases/download/{tag}/{asset}"
     const val APK_ASSET_NAME = "AsoulReminder-Android-debug.apk"
 
     /** 启动时的静默检查间隔；手动检查不受限制。 */
@@ -69,6 +76,80 @@ object AppUpdater {
         }
         return false
     }
+
+    /**
+     * 从 releases.atom 里解析最新版本。feed 里没有附件大小，先记 0（展示为「大小未知」）。
+     * 用文本切分而不是 XmlPullParser，既能覆盖真实 feed，也便于在 JVM 单测里直接跑。
+     */
+    fun parseFeed(text: String?, assetName: String = APK_ASSET_NAME): AppRelease {
+        val raw = text.orEmpty()
+        if (raw.isBlank()) throw UpdateException("Release 源返回了空内容")
+        val firstEntry = ENTRY_REGEX.find(raw)?.value ?: throw UpdateException("Release 源里没有任何版本")
+
+        val id = ID_REGEX.find(firstEntry)?.groupValues?.getOrNull(1).orEmpty().trim()
+        // id 形如 tag:github.com,2008:Repository/1444186488/v0.5.0，末尾即 tag。
+        val tag = id.substringAfterLast('/').trim()
+        if (tag.isEmpty()) throw UpdateException("Release 源缺少版本号")
+
+        val title = TITLE_REGEX.find(firstEntry)?.groupValues?.getOrNull(1).orEmpty().trim()
+        val link = LINK_ALT_REGEX.find(firstEntry)?.groupValues?.getOrNull(1).orEmpty().trim()
+        val content = CONTENT_REGEX.find(firstEntry)?.groupValues?.getOrNull(1).orEmpty()
+        return AppRelease(
+            tag = tag,
+            name = title.ifEmpty { tag },
+            notes = htmlToText(content),
+            assetName = assetName,
+            assetUrl = DOWNLOAD_URL_TEMPLATE
+                .replace("{tag}", tag)
+                .replace("{asset}", assetName),
+            assetSize = 0L,
+            htmlUrl = link.ifEmpty { RELEASES_PAGE_URL },
+        )
+    }
+
+    /** 把 Release 说明里的 HTML 片段压成可读纯文本。 */
+    fun htmlToText(markup: String?): String {
+        var text = unescapeHtml(markup.orEmpty())
+        text = text.replace(Regex("(?i)<br\\s*/?>"), "\n")
+        text = text.replace(Regex("(?i)</(p|div|li|h[1-6])>"), "\n")
+        text = text.replace(Regex("(?i)<li[^>]*>"), "- ")
+        text = text.replace(Regex("<[^>]+>"), "")
+        text = unescapeHtml(text)
+        val lines = text.split('\n').map { it.trimEnd() }
+        return lines.dropWhile(String::isEmpty).dropLastWhile(String::isEmpty).joinToString("\n")
+    }
+
+    private fun unescapeHtml(text: String): String {
+        if ('&' !in text) return text
+        return ENTITY_REGEX.replace(text) { match ->
+            val entity = match.groupValues[1]
+            when {
+                entity == "amp" -> "&"
+                entity == "lt" -> "<"
+                entity == "gt" -> ">"
+                entity == "quot" -> "\""
+                entity == "apos" -> "'"
+                entity == "nbsp" -> " "
+                entity.startsWith("#x", ignoreCase = true) ->
+                    entity.drop(2).toIntOrNull(16)?.let(::codePointToString) ?: match.value
+                entity.startsWith("#") ->
+                    entity.drop(1).toIntOrNull()?.let(::codePointToString) ?: match.value
+                else -> match.value
+            }
+        }
+    }
+
+    private fun codePointToString(codePoint: Int): String? =
+        runCatching { String(Character.toChars(codePoint)) }.getOrNull()
+
+    private val ENTITY_REGEX = Regex("&(#?[0-9A-Za-z]+);")
+
+    private val ENTRY_REGEX = Regex("(?s)<entry>.*?</entry>")
+    private val ID_REGEX = Regex("(?s)<id>(.*?)</id>")
+    private val TITLE_REGEX = Regex("(?s)<title>(.*?)</title>")
+    private val CONTENT_REGEX = Regex("(?s)<content[^>]*>(.*?)</content>")
+    private val LINK_ALT_REGEX =
+        Regex("(?s)<link[^>]*rel=\"alternate\"[^>]*href=\"([^\"]+)\"")
 
     fun parseRelease(payload: JsonObject, assetName: String = APK_ASSET_NAME): AppRelease {
         val tag = payload["tag_name"]?.jsonPrimitive?.contentOrNull?.trim().orEmpty()

@@ -1,6 +1,7 @@
 package com.alortinarciple.asoulreminder.data
 
 import android.content.Context
+import android.util.Log
 import com.alortinarciple.asoulreminder.BuildConfig
 import com.alortinarciple.asoulreminder.background.BackgroundScheduler
 import com.alortinarciple.asoulreminder.background.MonitorSchedule
@@ -234,20 +235,33 @@ class ReminderRepository(
     suspend fun checkUpdate(silent: Boolean = false): AppRelease? {
         val now = System.currentTimeMillis()
         if (silent && now - preferences.updateCheckedAtMillis() < AppUpdater.UPDATE_CHECK_INTERVAL_MILLIS) return null
-        val payload = try {
-            network.getJson(AppUpdater.LATEST_RELEASE_URL, mapOf("Accept" to "application/vnd.github+json"))
-        } catch (error: Throwable) {
-            throw UpdateException("无法连接 GitHub：${error.message ?: error.javaClass.simpleName}")
-        }
+        val release = fetchLatestRelease()
         preferences.recordUpdateCheck(now)
-        val release = try {
-            AppUpdater.parseRelease(payload)
+        return if (AppUpdater.isNewer(release.tag, BuildConfig.VERSION_NAME)) release else null
+    }
+
+    /**
+     * 先读 releases.atom（不消耗 api.github.com 的按 IP 限流额度），失败再退回官方 API。
+     * 两条路都失败时抛出最后一条错误。
+     */
+    private suspend fun fetchLatestRelease(): AppRelease {
+        val feedError = try {
+            return AppUpdater.parseFeed(network.getText(AppUpdater.RELEASES_FEED_URL))
+        } catch (error: Throwable) {
+            error
+        }
+        try {
+            val payload = network.getJson(
+                AppUpdater.LATEST_RELEASE_URL,
+                mapOf("Accept" to "application/vnd.github+json"),
+            )
+            return AppUpdater.parseRelease(payload)
         } catch (error: UpdateException) {
             throw error
         } catch (error: Throwable) {
-            throw UpdateException("无法解析更新信息：${error.message ?: error.javaClass.simpleName}")
+            Log.w("ReminderRepository", "releases.atom 与 GitHub API 均不可用", feedError)
+            throw UpdateException("无法连接 GitHub：${error.message ?: error.javaClass.simpleName}")
         }
-        return if (AppUpdater.isNewer(release.tag, BuildConfig.VERSION_NAME)) release else null
     }
 
     /** 下载安装包到 cacheDir/updates，返回本地文件；[progress] 回调 0..100 的整数进度。 */

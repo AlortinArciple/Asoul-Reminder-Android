@@ -98,10 +98,12 @@ class LiveMonitorService : Service() {
         if (MonitorSchedule.contentDue(state.cache.lastLiveRefreshEpochMillis, settings.liveCloseIntervalMinutes, now)) {
             runCatching { repository.refreshLiveStatuses() }
         }
-        // 滚动检查直播窗口,窗口内且无活跃监控协程的日程启动单场监控。
+        // 滚动检查直播窗口:提前窗口(开播前 60 分钟起)与开播窗口都要起单场监控协程。
         state.cache.events.forEach { event ->
             val eventId = event.id
-            if (jobs[eventId]?.isActive != true && MonitorSchedule.liveWindowStarted(event, now)) {
+            val watching = MonitorSchedule.liveEarlyWindowStarted(event, now) ||
+                MonitorSchedule.liveWindowStarted(event, now)
+            if (jobs[eventId]?.isActive != true && watching) {
                 jobs[eventId] = serviceScope.launch {
                     monitor(eventId)
                     jobs.remove(eventId)
@@ -116,7 +118,7 @@ class LiveMonitorService : Service() {
         val event = state.cache.events.firstOrNull { it.id == eventId } ?: return
         if (!state.settings.enhancedMonitoringEnabled || event.status == "rescheduled") return
         val member = memberForEvent(event, state.settings.members) ?: return
-        val openWindowEnd = event.startEpochMillis + TimeUnit.MINUTES.toMillis(2)
+        val openWindowEnd = MonitorSchedule.liveMonitorEndMillis(event)
         var observedLive = false
 
         while (serviceScope.isActive) {
@@ -136,7 +138,9 @@ class LiveMonitorService : Service() {
                 return
             }
             if (now > openWindowEnd) return
-            delay(TimeUnit.SECONDS.toMillis(state.settings.liveOpenIntervalSeconds.coerceAtLeast(15).toLong()))
+            // 提前窗口内每 90 秒查一次,进入开播窗口后按 liveOpenIntervalSeconds。
+            val wait = MonitorSchedule.livePollIntervalMillis(event, now, state.settings.liveOpenIntervalSeconds)
+            delay(wait)
         }
     }
 

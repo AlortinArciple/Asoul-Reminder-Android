@@ -73,19 +73,6 @@ class MonitorScheduleTest {
 
     @Test
     fun liveWindowOpensTenMinutesBeforeAndClosesTwoMinutesAfter() {
-        fun event(start: Long, status: String = "normal") = LiveEvent(
-            id = "e1",
-            title = "直播",
-            description = "",
-            type = "live",
-            format = "",
-            startEpochMillis = start,
-            status = status,
-            host = "diana",
-            performers = listOf(),
-            sourceId = "",
-            color = "#E799B0",
-        )
         val start = now + TimeUnit.MINUTES.toMillis(60)
         val opened = start - TimeUnit.MINUTES.toMillis(10)
         assertFalse(MonitorSchedule.liveWindowStarted(event(start), opened - 1000))
@@ -97,4 +84,63 @@ class MonitorScheduleTest {
         assertFalse(MonitorSchedule.liveWindowStarted(event(start, "rescheduled"), start))
         assertTrue(MonitorSchedule.liveWindowStarted(event(start, "cancelled"), start))
     }
+
+    @Test
+    fun earlyWindowCoversSixtyToTenMinutesBeforeStart() {
+        val start = now + TimeUnit.MINUTES.toMillis(60)
+        val earlyStart = start - TimeUnit.MINUTES.toMillis(60)
+        val earlyEnd = start - TimeUnit.MINUTES.toMillis(10)
+
+        // 左闭右开：早于 60 分钟不算，正好 60 分钟算，正好 10 分钟交给开播窗口。
+        assertFalse(MonitorSchedule.liveEarlyWindowStarted(event(start), earlyStart - 1000))
+        assertTrue(MonitorSchedule.liveEarlyWindowStarted(event(start), earlyStart))
+        assertTrue(MonitorSchedule.liveEarlyWindowStarted(event(start), earlyEnd - 1000))
+        assertFalse(MonitorSchedule.liveEarlyWindowStarted(event(start), earlyEnd))
+        assertFalse(MonitorSchedule.liveEarlyWindowStarted(event(start, "rescheduled"), earlyStart))
+        assertTrue(MonitorSchedule.liveEarlyWindowStarted(event(start, "cancelled"), earlyStart))
+    }
+
+    @Test
+    fun earlyWindowAndOpenWindowNeverOverlap() {
+        val start = now + TimeUnit.MINUTES.toMillis(60)
+        // 覆盖 61 分钟前到 3 分钟后，任一时刻至多归属一个窗口。
+        (-61L..3L).forEach { minutes ->
+            val at = start + TimeUnit.MINUTES.toMillis(minutes)
+            val early = MonitorSchedule.liveEarlyWindowStarted(event(start), at)
+            val open = MonitorSchedule.liveWindowStarted(event(start), at)
+            assertFalse("$minutes 分钟两窗口重叠", early && open)
+        }
+    }
+
+    @Test
+    fun livePollIntervalIsNinetySecondsBeforeOpenWindow() {
+        val start = now + TimeUnit.MINUTES.toMillis(60)
+        val early = start - TimeUnit.MINUTES.toMillis(35)
+        val opened = start - TimeUnit.MINUTES.toMillis(5)
+
+        assertEquals(TimeUnit.SECONDS.toMillis(90), MonitorSchedule.livePollIntervalMillis(event(start), early, 30))
+        assertEquals(TimeUnit.SECONDS.toMillis(30), MonitorSchedule.livePollIntervalMillis(event(start), opened, 30))
+        // 配置低于 15 秒时按 15 秒兜底
+        assertEquals(TimeUnit.SECONDS.toMillis(15), MonitorSchedule.livePollIntervalMillis(event(start), opened, 1))
+    }
+
+    @Test
+    fun liveMonitorEndsTwoMinutesAfterStart() {
+        val start = now + TimeUnit.MINUTES.toMillis(60)
+        assertEquals(start + TimeUnit.MINUTES.toMillis(2), MonitorSchedule.liveMonitorEndMillis(event(start)))
+    }
+
+    private fun event(start: Long, status: String = "normal") = LiveEvent(
+        id = "e1",
+        title = "直播",
+        description = "",
+        type = "live",
+        format = "",
+        startEpochMillis = start,
+        status = status,
+        host = "diana",
+        performers = listOf(),
+        sourceId = "",
+        color = "#E799B0",
+    )
 }

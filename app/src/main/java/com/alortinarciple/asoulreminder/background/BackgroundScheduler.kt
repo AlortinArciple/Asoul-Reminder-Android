@@ -110,9 +110,10 @@ object BackgroundScheduler {
     }
 
     private fun scheduleLiveWindow(context: Context, event: LiveEvent) {
+        // 闹钟在提前窗口起点触发(开播前 60 分钟)，与 MonitorSchedule 的提前窗口一致。
         val triggerAt = max(
             System.currentTimeMillis() + 1_000,
-            event.startEpochMillis - TimeUnit.MINUTES.toMillis(10),
+            event.startEpochMillis - MonitorSchedule.LIVE_EARLY_WINDOW_BEFORE_MILLIS,
         )
         val alarmManager = context.getSystemService(AlarmManager::class.java)
         if (canScheduleExact(alarmManager)) {

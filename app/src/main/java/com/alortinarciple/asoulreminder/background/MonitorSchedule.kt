@@ -6,7 +6,8 @@ import java.util.concurrent.TimeUnit
 /**
  * 后台监控服务的到期与开播窗口判断(纯函数,便于单测)。
  * 节流下限与 Windows 端业务规则一致：日程 30 分钟、动态/直播 15 分钟；
- * 开播检测窗口为开播前 10 分钟至开播后 2 分钟。
+ * 开播检测窗口为「提前窗口 开播前 60 分钟 → 开播前 10 分钟，每 90 秒」
+ * 加「开播窗口 开播前 10 分钟 → 开播后 2 分钟，每 liveOpenIntervalSeconds 秒」两段。
  */
 object MonitorSchedule {
     const val TICK_MILLIS = 60_000L
@@ -18,6 +19,10 @@ object MonitorSchedule {
     const val MAX_BACKOFF_FACTOR = 4
     val LIVE_WINDOW_BEFORE_MILLIS: Long = TimeUnit.MINUTES.toMillis(10)
     val LIVE_WINDOW_AFTER_MILLIS: Long = TimeUnit.MINUTES.toMillis(2)
+    /** 提前检测窗口起点：开播前 60 分钟。 */
+    val LIVE_EARLY_WINDOW_BEFORE_MILLIS: Long = TimeUnit.MINUTES.toMillis(60)
+    /** 提前窗口内的轮询间隔：90 秒(与 Windows 端一致)。 */
+    val LIVE_EARLY_INTERVAL_MILLIS: Long = TimeUnit.SECONDS.toMillis(90)
 
     fun scheduleDue(lastRefreshEpochMillis: Long?, intervalMinutes: Int, now: Long): Boolean =
         scheduleDue(lastRefreshEpochMillis, intervalMinutes, now, failStreak = 0)
@@ -64,5 +69,29 @@ object MonitorSchedule {
         if (event.status == "rescheduled") return false
         return now >= event.startEpochMillis - LIVE_WINDOW_BEFORE_MILLIS &&
             now <= event.startEpochMillis + LIVE_WINDOW_AFTER_MILLIS
+    }
+
+    /**
+     * 是否处在提前检测窗口 `[start-60min, start-10min)`。
+     * 左闭右开：10 分钟整点起交给 [liveWindowStarted]，同一时刻只归属一个窗口。
+     */
+    fun liveEarlyWindowStarted(event: LiveEvent, now: Long): Boolean {
+        if (event.status == "rescheduled") return false
+        return now >= event.startEpochMillis - LIVE_EARLY_WINDOW_BEFORE_MILLIS &&
+            now < event.startEpochMillis - LIVE_WINDOW_BEFORE_MILLIS
+    }
+
+    /** 单场监控协程的退出时刻：开播后 2 分钟。 */
+    fun liveMonitorEndMillis(event: LiveEvent): Long =
+        event.startEpochMillis + LIVE_WINDOW_AFTER_MILLIS
+
+    /**
+     * 未开播时下一次轮询的等待时长：
+     * 提前窗口内 90 秒，进入 10 分钟开播窗口后按 liveOpenIntervalSeconds(不低于 15 秒)。
+     */
+    fun livePollIntervalMillis(event: LiveEvent, now: Long, openIntervalSeconds: Int): Long {
+        val openWindowStart = event.startEpochMillis - LIVE_WINDOW_BEFORE_MILLIS
+        if (now < openWindowStart) return LIVE_EARLY_INTERVAL_MILLIS
+        return TimeUnit.SECONDS.toMillis(openIntervalSeconds.coerceAtLeast(15).toLong())
     }
 }

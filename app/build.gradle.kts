@@ -15,8 +15,8 @@ android {
         applicationId = "com.alortinarciple.asoulreminder"
         minSdk = 26
         targetSdk = 36
-        versionCode = 11
-        versionName = "0.5.4"
+        versionCode = 12
+        versionName = "0.5.5"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true

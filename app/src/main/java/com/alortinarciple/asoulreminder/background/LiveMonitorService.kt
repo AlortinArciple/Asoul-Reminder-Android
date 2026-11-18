@@ -22,15 +22,20 @@ import java.util.concurrent.TimeUnit
 /**
  * 全天常驻的后台监控前台服务：
  * - 每 60 秒 tick 一次,按节流判断到期后刷新日程/动态/直播间状态；
- * - 滚动检查每场直播的开播检测窗口(开播前 10 分钟起),窗口内启动单场监控协程
- *   (开播检测 30 秒/下播检查 20 分钟/下播后 3 分钟高频动态,行为与原先一致)；
+ * - 滚动检查每场直播的检测窗口(开播前 60 分钟起),窗口内启动单场监控协程
+ *   (提前窗口 90 秒/开播窗口 liveOpenIntervalSeconds/下播检查 20 分钟/下播后 3 分钟高频动态)；
+ * - **单场监控按成员去重**：同一成员同时只允许一个轮询协程。一场没下播的长直播
+ *   跨进下一场日程的检测窗口时,不会再为该成员起第二个协程去并发轮询,
+ *   否则下播后的动态高频刷新会跑两遍、常驻通知文案互相覆盖；
  * - 通知栏常驻低优先级「后台运行中」通知(monitor 渠道)。
  * 进程被系统杀死后由 START_STICKY、开机广播与开播闹钟路径尽力重建；
  * 若 ROM 限制仍无法拉起,请在系统设置中允许本应用自启动与后台运行。
  */
 class LiveMonitorService : Service() {
     private val serviceScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val jobs = ConcurrentHashMap<String, Job>()
+
+    /** 键是成员 id 而非日程 id：一场直播跨过后续日程时只保留一个协程。 */
+    private val memberJobs = ConcurrentHashMap<String, Job>()
     private var mainLoop: Job? = null
 
     override fun onCreate() {
@@ -44,12 +49,10 @@ class LiveMonitorService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         ensureMainLoop()
         intent?.getStringExtra(EXTRA_EVENT_ID)?.let { eventId ->
-            if (jobs[eventId]?.isActive != true) {
-                jobs[eventId] = serviceScope.launch {
-                    monitor(eventId)
-                    jobs.remove(eventId)
-                }
-            }
+            val settings = container().repository.state.value.settings
+            val event = container().repository.state.value.cache.events.firstOrNull { it.id == eventId }
+            val member = event?.let { memberForEvent(it, settings.members) }
+            if (member != null) startMonitor(member.id, eventId)
         }
         return START_STICKY
     }
@@ -100,14 +103,23 @@ class LiveMonitorService : Service() {
         }
         // 滚动检查直播窗口:提前窗口(开播前 60 分钟起)与开播窗口都要起单场监控协程。
         state.cache.events.forEach { event ->
-            val eventId = event.id
             val watching = MonitorSchedule.liveEarlyWindowStarted(event, now) ||
                 MonitorSchedule.liveWindowStarted(event, now)
-            if (jobs[eventId]?.isActive != true && watching) {
-                jobs[eventId] = serviceScope.launch {
-                    monitor(eventId)
-                    jobs.remove(eventId)
-                }
+            if (!watching) return@forEach
+            val member = memberForEvent(event, settings.members) ?: return@forEach
+            // 按成员去重：该成员已有协程在跑(可能是上一场还没下播)就不再起新的。
+            startMonitor(member.id, event.id)
+        }
+    }
+
+    /** 按成员去重地启动单场监控协程；已有活跃协程时直接返回。 */
+    private fun startMonitor(memberId: String, eventId: String) {
+        if (memberJobs[memberId]?.isActive == true) return
+        memberJobs[memberId] = serviceScope.launch {
+            try {
+                monitor(eventId)
+            } finally {
+                memberJobs.remove(memberId)
             }
         }
     }

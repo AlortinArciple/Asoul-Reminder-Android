@@ -1178,6 +1178,7 @@ private fun MemberAvatar(memberId: String, size: androidx.compose.ui.unit.Dp) {
         "bella" -> R.drawable.avatar_bella
         "fiona" -> R.drawable.avatar_fiona
         "gladys" -> R.drawable.avatar_gladys
+        "official" -> R.drawable.avatar_official
         else -> R.drawable.ic_launcher_foreground
     }
     androidx.compose.foundation.Image(

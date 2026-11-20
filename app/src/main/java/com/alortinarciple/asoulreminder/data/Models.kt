@@ -183,4 +183,17 @@ fun defaultMembers(): List<MemberConfig> = listOf(
         dynamicUrl = "https://space.bilibili.com/3537115310721781/dynamic",
         liveUrl = "https://live.bilibili.com/30858592",
     ),
+    // 官方账号只监测动态：monitorLive=false 且 liveUrl 留空，
+    // 直播相关流程（refreshLiveStatuses / 开播窗口）都会跳过它。
+    MemberConfig(
+        id = "official",
+        name = "A-SOUL_Official",
+        enabled = true,
+        monitorDynamic = true,
+        monitorLive = false,
+        color = "#FF7F9E",
+        uid = "703007996",
+        dynamicUrl = "https://space.bilibili.com/703007996/dynamic",
+        liveUrl = "",
+    ),
 )

@@ -77,4 +77,41 @@ class MemberIdentityDefaultsTest {
         assertEquals(false, filled.enabled)
         assertEquals(false, filled.monitorDynamic)
     }
+
+    @Test
+    fun appendsMissingOfficialMember() {
+        val result = ensureDefaultMembers(listOf(member("diana")))
+
+        val official = result.first { it.id == "official" }
+        assertEquals("A-SOUL_Official", official.name)
+        assertEquals("703007996", official.uid)
+        assertEquals("https://space.bilibili.com/703007996/dynamic", official.dynamicUrl)
+        // 只要动态，不要直播间监控。
+        assertTrue(official.monitorDynamic)
+        assertEquals(false, official.monitorLive)
+        assertEquals("", official.liveUrl)
+        // 已有成员保留且不重复。
+        assertEquals("diana", result.first().id)
+        assertEquals(result.size, result.map { it.id }.distinct().size)
+    }
+
+    @Test
+    fun doesNotOverwriteExistingOfficial() {
+        // 用户改过的 official 必须原样保留：名称、开关、UID 都不被默认值覆盖。
+        val original = defaultMembers().map { member ->
+            if (member.id != "official") {
+                member
+            } else {
+                member.copy(
+                    name = "我自己改的名字",
+                    enabled = false,
+                    monitorDynamic = false,
+                    uid = "1",
+                    dynamicUrl = "https://example.com",
+                )
+            }
+        }
+
+        assertSame(original, ensureDefaultMembers(original))
+    }
 }

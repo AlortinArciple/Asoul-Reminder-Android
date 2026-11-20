@@ -26,7 +26,8 @@ class AppPreferences(context: Context) {
     fun loadSettings(): AppSettings = preferences.getString(SETTINGS_KEY, null)
         ?.let { runCatching { json.decodeFromString<AppSettings>(it) }.getOrNull() }
         ?.let { settings ->
-            val members = fillDefaultIdentities(settings.members)
+            val filled = fillDefaultIdentities(settings.members)
+            val members = ensureDefaultMembers(filled)
             if (members === settings.members) {
                 settings
             } else {

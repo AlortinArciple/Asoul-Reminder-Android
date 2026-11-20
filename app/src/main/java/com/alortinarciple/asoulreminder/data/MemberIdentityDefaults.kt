@@ -26,3 +26,14 @@ internal fun fillDefaultIdentities(members: List<MemberConfig>): List<MemberConf
     }
     return if (changed) filled else members
 }
+
+/**
+ * 把老设置里整条都不存在的已知成员追加进来。
+ * [fillDefaultIdentities] 只补已有成员的空字段，补不了「这一项根本没存下来」的情况；
+ * 已存在的 id 一律不动，避免覆盖用户改过的名称、颜色与开关。
+ */
+internal fun ensureDefaultMembers(members: List<MemberConfig>): List<MemberConfig> {
+    val existing = members.mapTo(mutableSetOf()) { it.id }
+    val missing = defaultMembers().filter { it.id !in existing }
+    return if (missing.isEmpty()) members else members + missing
+}
